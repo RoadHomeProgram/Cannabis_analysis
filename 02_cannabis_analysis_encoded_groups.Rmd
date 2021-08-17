@@ -1,0 +1,91 @@
+---
+title: "cannabis redefine groups"
+author: "Ryan Schubert"
+date: "7/27/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(readxl)
+library(dplyr)
+library(naniar)
+library(tidyr)
+library(ggplot2)
+library(viridis)
+library(plotrix)
+library(lme4)
+library(lmerTest)
+"%&%" = function(a,b) paste0(a,b)
+```
+
+
+```{r cars}
+dir<-"C:\\Users\\rshoo\\OneDrive\\Desktop\\rush\\cannabis use\\"
+completeData<-read_xlsx(dir %&% 'IOP_DATA_SET_6-12-2020 with Manual Corrections.xlsx',na = "-")
+vars<-c("PAT_ID","COHORT","COHORT_TYPE","AGE_AT_COHORT_START","gender","DAYSABST" %&% 1:8,"DAYSABST" %&% 1:8 %&% "_POST","PCL_SCORE","PCL_DAY" %&% 2:14)
+substanceData<-completeData %>% select(one_of(vars)) %>% filter(!(COHORT %in% 1:3))
+
+```
+```{r}
+substanceData<-substanceData %>% 
+  mutate(delta_PCL=PCL_SCORE-PCL_DAY14,
+         Cannabis_use=case_when(
+           DAYSABST2 !=0 & DAYSABST2_POST != 0 ~ "continuous",
+           DAYSABST2 ==0 & DAYSABST2_POST != 0 ~ "concurrent",
+           DAYSABST2 !=0 & DAYSABST2_POST == 0 ~ "prior",
+           DAYSABST2 ==0 & DAYSABST2_POST == 0 ~ "abstinent",
+         )) %>% filter(!is.na(Cannabis_use))
+table(substanceData$Cannabis_use)
+
+```
+
+
+# get the linear association with delta pcl
+
+```{r}
+
+change_association_model<-lm(delta_PCL ~ Cannabis_use  + AGE_AT_COHORT_START + gender + COHORT_TYPE,data=substanceData)
+anova(change_association_model)
+summary(change_association_model)
+
+```
+
+no linear association between encoded grouping and the 
+
+
+# get the lmm interaction between group and time
+
+
+```{r}
+
+substanceDataLong<-substanceData %>% pivot_longer(starts_with("PCL")) %>%
+  mutate(name=factor(name, ordered = TRUE, levels = unique(name))) %>%
+  rename(PCL=value,day=name)
+
+encoded_group_model<-lmer(PCL ~ day*Cannabis_use + AGE_AT_COHORT_START + gender + COHORT_TYPE + (1|PAT_ID),substanceDataLong)
+anova(encoded_group_model)
+summary(encoded_group_model)
+
+substanceDataLong %>% filter(complete.cases(substanceDataLong)) %>%
+  group_by_at(c("day","Cannabis_use")) %>%
+  summarise(PCL_outcomes=mean(PCL),
+            PCL_se=std.error(PCL)) %>%
+  ggplot(aes_string(x="day",y="PCL_outcomes",colour="Cannabis_use")) +
+    geom_line(aes_string(group="Cannabis_use",colour="Cannabis_use")) +
+    geom_errorbar(aes(ymin=PCL_outcomes-PCL_se,ymax=PCL_outcomes+PCL_se)) +
+    geom_point(aes_string(colour="Cannabis_use")) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 45,, hjust=1)) +
+    ylab("PCL-5 score") +
+    xlab("Day administered") +
+    scale_colour_viridis(discrete=T) +
+    labs(colour = gsub("_user","","Cannabis") %&% " Use") +
+    ggtitle("Impact of " %&% gsub("_user","","Cannabis") %&% " Use") #+
+    ggsave(dir %&% "Cannabis_encoded_group_outcomes.png",dpi=300)
+```
+
+
+
+
+

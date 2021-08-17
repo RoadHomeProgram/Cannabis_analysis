@@ -1,0 +1,251 @@
+---
+title: "00 explore and create cannabis dataset"
+author: "Ryan Schubert"
+date: "July 7, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(readxl)
+library(dplyr)
+library(naniar)
+library(tidyr)
+library(ggplot2)
+"%&%" = function(a,b) paste0(a,b)
+```
+
+## read in complete data and subset to relevant variables
+
+
+```{r}
+dir<-"C:\\Users\\rshoo\\OneDrive\\Desktop\\rush\\cannabis use\\"
+completeData<-read_xlsx(dir %&% 'IOP_DATA_SET_6-12-2020 with Manual Corrections.xlsx',na = "-")
+#write out a csv for faster reading later
+#fwrite(completeData,dir %&% 'IOP_DATA_SET_6-12-2020 with Manual Corrections.csv')
+#subset to variables of interest
+#DAYSABST2,DAYSABST2_POST,DAYSABST2_3MON,DAYSABST2_6MON,DAYSABST2_12MON
+#aware that days abstinent actually measures days substance was used
+#also outome variables
+#PCL_SCORE,PCL[1-20]_DAY14
+#basic patient info
+#PAT_ID
+
+vars<-c("PAT_ID","DAYSABST2","DAYSABST2_POST","PCL_SCORE","PCL_DAY14")
+cannabisData<-completeData %>% select(one_of(vars))
+#next engineer the total PCL score for day 14
+
+
+vis_miss(cannabisData)
+fwrite(cannabisData,dir %&% 'IOP_cannabis_outcomes.csv')
+# cannabisData<-cannabisData[complete.cases(cannabisData),]
+# fwrite(cannabisData,dir %&% 'IOP_cannabis_outcomes_complete_cases.csv')
+```
+
+fewer samples in complete data set than I would have expected - should be around 500, but have 480 instead?
+double check that I have correct variables
+
+# exploratory
+
+remember that days abstinent actually measures days used in the last two weeks
+
+```{r}
+str(cannabisData)
+hist(cannabisData$DAYSABST2)
+sum(cannabisData$DAYSABST2 > 0)
+
+hist(cannabisData$DAYSABST2_POST)
+sum(cannabisData$DAYSABST2_POST > 0)
+
+table(cannabisData$DAYSABST2 > 0,cannabisData$DAYSABST2_POST > 0)
+
+```
+most people have used no cannabis in the two weeks prior to the IOP with ~21% having used at all
+similarly most do not use cannabis in the final two weeks of the IOP with only ~11% having used at all
+In total ~25% of people used cannabis at any time point
+
+
+a small proportion of people who did not use prior to the IOP went on to use during the IOP
+A large proportion of peple who did use prior to the IOP went on to not use during the final two weeks of the IOP
+
+# basic analysis
+
+first I want to know if use at each individual time point is associated with outcome scores and change in scores
+Then I want to know if being a user at either time point is associated with outcome scores and change in scores
+then I want to know if number of days are associated with outcome scores and change in outcome scores
+
+## First create additional variables
+
+```{r}
+cannabisData<-cannabisData %>% mutate(user_pre=if_else(cannabisData$DAYSABST2 > 0,T,F),
+                        user_concurrent=if_else(cannabisData$DAYSABST2_POST > 0,T,F),
+                        user_either=if_else(cannabisData$DAYSABST2 > 0 | cannabisData$DAYSABST2_POST > 0,T,F),
+                        delta_PCL=PCL_SCORE-PCL_DAY14)
+hist(cannabisData$delta_PCL)
+```
+
+## Check some asusmptions
+
+
+```{r}
+shapiro.test(cannabisData$delta_PCL) # change in score is not normal
+shapiro.test(cannabisData$PCL_DAY14) # outcome score is not normal
+
+```
+
+
+## Next analyze groupings
+
+```{r}
+
+
+
+cannabisDataLong<-cannabisData %>% pivot_longer(starts_with("PCL")) %>%
+  mutate(name=if_else(name=="PCL_SCORE","Baseline","Post"))
+
+cannabisDataLong %>% filter(complete.cases(cannabisDataLong)) %>%
+  group_by(name,user_pre) %>%
+  summarise(PCL_outcomes=mean(value)) %>%
+  ggplot(aes(x=name,y=PCL_outcomes,colour=user_pre)) +
+    geom_line(aes(group=user_pre,colour=user_pre)) +
+    geom_point(aes(colour=user_pre)) +
+    theme_bw()
+
+cannabisDataLong %>% filter(complete.cases(cannabisDataLong)) %>%
+  group_by(name,user_concurrent) %>%
+  summarise(PCL_outcomes=mean(value)) %>%
+  ggplot(aes(x=name,y=PCL_outcomes,colour=user_concurrent)) +
+    geom_line(aes(group=user_concurrent,colour=user_concurrent)) +
+    geom_point(aes(colour=user_concurrent)) +
+    theme_bw()
+
+cannabisDataLong %>% filter(complete.cases(cannabisDataLong)) %>%
+  group_by(name,user_either) %>%
+  summarise(PCL_outcomes=mean(value)) %>%
+  ggplot(aes(x=name,y=PCL_outcomes,colour=user_either)) +
+    geom_line(aes(group=user_either,colour=user_either)) +
+    geom_point(aes(colour=user_either)) +
+    theme_bw()
+
+ggplot(data=cannabisData,aes(x=PCL_DAY14,y=PCL_SCORE)) +
+  geom_point(aes(colour=user_pre)) +
+  geom_smooth(aes(group=user_pre,colour=user_pre),method="lm",se=F) +
+  theme_bw() +
+  geom_abline(slope=1)
+
+
+
+
+```
+
+# model analysis
+
+next run categories with models
+
+```{r}
+summary(linear_regression)
+
+library(lme4)
+library(lmerTest)
+cannabis_interaction_regression1<-lmer(value ~ name*user_pre + (1|PAT_ID),data=cannabisDataLong)
+summary(cannabis_interaction_regression1)
+cannabis_interaction_regression1b<-lmer(value ~ (name|PAT_ID) + user_pre + name:user_pre +  (1|PAT_ID),data=cannabisDataLong)
+anova(cannabis_interaction_regression1,cannabis_interaction_regression1b)
+#having a random slope for treatment effect does not lower the AIC, don't expect it to be relevant for other categories 
+
+
+cannabis_interaction_regression2<-lmer(value ~ name*user_concurrent + (1|PAT_ID),data=cannabisDataLong)
+summary(cannabis_interaction_regression2)
+
+cannabis_interaction_regression3<-lmer(value ~ name*user_either + (1|PAT_ID),data=cannabisDataLong)
+summary(cannabis_interaction_regression3)
+
+
+```
+
+can reasonably conclude that there is a significant treatment effect, but no effect or interaction with cannabis use status at any time point
+
+lookup paired tests for multiple treatment groups, anova?
+
+
+## continuous and ordinal models
+
+```{r}
+
+cannabis_continuous_model1<-lmer(value ~ name*DAYSABST2_POST + (1|PAT_ID),data=cannabisDataLong)
+summary(cannabis_continuous_model1)
+
+cannabis_continuous_model2<-lmer(value ~ name*DAYSABST2 + (1|PAT_ID),data=cannabisDataLong)
+summary(cannabis_continuous_model2)
+
+cannabisDataLong <-mutate(cannabisDataLong,DAYSABST2_TOTAL = DAYSABST2 + DAYSABST2_POST)
+
+
+cannabis_continuous_model3<-lmer(value ~ name*DAYSABST2_TOTAL + (1|PAT_ID),data=cannabisDataLong)
+summary(cannabis_continuous_model3)
+
+```
+
+# Next lets look at the LMM taking all PCL days into account plus the factors that were accounted for in 
+
+doi: 10.1080/20008198.2021.1888541
+
+age, sex, and cohort type
+
+conditionally independent errors selected based on AIC
+
+included random slopes and intercepts 
+
+```{r}
+vars<-c("PAT_ID","COHORT_TYPE","AGE_AT_COHORT_START","gender","DAYSABST2","DAYSABST2_POST","PCL_SCORE","PCL_DAY" %&% 2:14)
+cannabisDataExtended<-completeData %>% select(one_of(vars))
+cannabisDataExtendedLong<-cannabisDataExtended %>% pivot_longer(starts_with("PCL")) %>%
+  mutate(name=factor(name, ordered = TRUE, levels = unique(cannabisDataExtendedLong$name)),
+         DAYSABST2_TOTAL=DAYSABST2 + DAYSABST2_POST,
+         user_pre=if_else(DAYSABST2 > 0,T,F),
+         user_concurrent=if_else(DAYSABST2_POST > 0,T,F),
+         user_either=if_else(DAYSABST2_TOTAL > 0,T,F))
+  
+cannabisDataExtendedLong %>% filter(complete.cases(cannabisDataExtendedLong)) %>%
+  group_by(name,user_either) %>%
+  summarise(PCL_outcomes=mean(value)) %>%
+  ggplot(aes(x=name,y=PCL_outcomes,colour=user_either)) +
+    geom_line(aes(group=user_either,colour=user_either)) +
+    geom_point(aes(colour=user_either)) +
+    theme_bw() +
+  theme(axis.text.x = element_text(angle = 45,, hjust=1)) +
+  ylim(0,60)
+
+cannabisDataExtendedLong %>% filter(complete.cases(cannabisDataExtendedLong)) %>%
+  group_by(name,user_concurrent) %>%
+  summarise(PCL_outcomes=mean(value)) %>%
+  ggplot(aes(x=name,y=PCL_outcomes,colour=user_concurrent)) +
+    geom_line(aes(group=user_concurrent,colour=user_concurrent)) +
+    geom_point(aes(colour=user_concurrent)) +
+    theme_bw() +
+  theme(axis.text.x = element_text(angle = 45,, hjust=1)) +
+  ylim(0,60)
+
+cannabisDataExtendedLong %>% filter(complete.cases(cannabisDataExtendedLong)) %>%
+  group_by(name,user_pre) %>%
+  summarise(PCL_outcomes=mean(value)) %>%
+  ggplot(aes(x=name,y=PCL_outcomes,colour=user_pre)) +
+    geom_line(aes(group=user_pre,colour=user_pre)) +
+    geom_point(aes(colour=user_pre)) +
+    theme_bw() +
+  theme(axis.text.x = element_text(angle = 45,, hjust=1)) +
+  ylim(0,60)
+
+
+total_use_model<-lmer(value ~ name*DAYSABST2_TOTAL + AGE_AT_COHORT_START + gender + COHORT_TYPE + (1|PAT_ID),data=cannabisDataExtendedLong)
+anova(total_use_model)
+
+prior_use_model<-lmer(value ~ name*DAYSABST2 + AGE_AT_COHORT_START + gender + COHORT_TYPE + (1|PAT_ID),data=cannabisDataExtendedLong)
+anova(prior_use_model)
+
+concurrent_use_model<-lmer(value ~ name*DAYSABST2_POST + AGE_AT_COHORT_START + gender + COHORT_TYPE + (1|PAT_ID),data=cannabisDataExtendedLong)
+#summary(cocurrent_use_model)
+anova(concurrent_use_model)
+```
+
+

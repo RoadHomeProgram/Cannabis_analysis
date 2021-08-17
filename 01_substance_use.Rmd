@@ -1,0 +1,161 @@
+---
+title: "01_substance_use_outcomes"
+author: "Ryan Schubert"
+date: "July 8, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(readxl)
+library(dplyr)
+library(naniar)
+library(tidyr)
+library(ggplot2)
+library(viridis)
+library(plotrix)
+library(lme4)
+library(lmerTest)
+"%&%" = function(a,b) paste0(a,b)
+```
+
+
+
+```{r cars}
+dir<-"C:\\Users\\rshoo\\OneDrive\\Desktop\\rush\\cannabis use\\"
+completeData<-read_xlsx(dir %&% 'IOP_DATA_SET_6-12-2020 with Manual Corrections.xlsx',na = "-")
+vars<-c("PAT_ID","COHORT","COHORT_TYPE","AGE_AT_COHORT_START","gender","DAYSABST" %&% 1:8,"DAYSABST" %&% 1:8 %&% "_POST","PCL_SCORE","PCL_DAY" %&% 2:14)
+substanceData<-completeData %>% select(one_of(vars)) %>% filter(!(COHORT %in% 1:3))
+
+```
+
+# association on total change in PCL score with days of a particular substance use
+
+```{r}
+substanceData<-substanceData %>% mutate(delta_PCL=PCL_SCORE-PCL_DAY14) %>% filter(!is.na(delta_PCL),!is.na(DAYSABST7_POST))
+shapiro.test(substanceData$delta_PCL)
+qqnorm(substanceData$delta_PCL)
+qqline(substanceData$delta_PCL)
+# substanceData %>% filter(complete.cases(substanceData))
+
+table(substanceData$gender)
+table(substanceData$COHORT_TYPE)
+summary(substanceData$AGE_AT_COHORT_START)
+sd(substanceData$AGE_AT_COHORT_START)
+
+change_association_model_list<-vector(mode="list",8)
+for (i in 1:8){
+  change_association_model_list[[i]]<-lm("delta_PCL ~ DAYSABST" %&% i %&% "*DAYSABST" %&% i %&% "_POST + AGE_AT_COHORT_START + gender + COHORT_TYPE",data=substanceData)
+}
+lapply(change_association_model_list,anova)
+# summary(change_association_model_list[[1]])
+
+
+plot(substanceData$DAYSABST6_POST,substanceData$delta_PCL)
+
+```
+
+```{r}
+table(substanceData$DAYSABST1>0,substanceData$DAYSABST1_POST>0)/sum(table(substanceData$DAYSABST1>0,substanceData$DAYSABST1_POST>0))
+table(substanceData$DAYSABST1>0,substanceData$DAYSABST1_POST>0)
+
+table(substanceData$DAYSABST2>0,substanceData$DAYSABST2_POST>0)/sum(table(substanceData$DAYSABST2>0,substanceData$DAYSABST2_POST>0))
+table(substanceData$DAYSABST2>0,substanceData$DAYSABST2_POST>0)
+
+table(substanceData$DAYSABST3>0,substanceData$DAYSABST3_POST>0)/sum(table(substanceData$DAYSABST3>0,substanceData$DAYSABST3_POST>0))
+table(substanceData$DAYSABST3>0,substanceData$DAYSABST3_POST>0)
+
+table(substanceData$DAYSABST4>0,substanceData$DAYSABST4_POST>0)/sum(table(substanceData$DAYSABST4>0,substanceData$DAYSABST4_POST>0))
+table(substanceData$DAYSABST4>0,substanceData$DAYSABST4_POST>0)
+
+table(substanceData$DAYSABST5>0,substanceData$DAYSABST5_POST>0)/sum(table(substanceData$DAYSABST5>0,substanceData$DAYSABST5_POST>0))
+table(substanceData$DAYSABST5>0,substanceData$DAYSABST5_POST>0)
+
+table(substanceData$DAYSABST6>0,substanceData$DAYSABST6_POST>0)/sum(table(substanceData$DAYSABST6>0,substanceData$DAYSABST6_POST>0))
+table(substanceData$DAYSABST6>0,substanceData$DAYSABST6_POST>0)
+
+table(substanceData$DAYSABST7>0,substanceData$DAYSABST7_POST>0)/sum(table(substanceData$DAYSABST7>0,substanceData$DAYSABST7_POST>0))
+table(substanceData$DAYSABST7>0,substanceData$DAYSABST7_POST>0)
+
+table(substanceData$DAYSABST8>0,substanceData$DAYSABST8_POST>0)/sum(table(substanceData$DAYSABST8>0,substanceData$DAYSABST8_POST>0))
+table(substanceData$DAYSABST8>0,substanceData$DAYSABST8_POST>0)
+
+```
+
+```{r}
+substanceDataLong<-substanceData %>% pivot_longer(starts_with("PCL")) %>%
+  mutate(name=factor(name, ordered = TRUE, levels = unique(name)),
+         DAYSABST1_TOTAL=DAYSABST1 + DAYSABST1_POST,
+         Alcohol_user = DAYSABST1_TOTAL > 0,
+         Alcohol_concurrent = DAYSABST1_POST > 0,
+         Alcohol_prior = DAYSABST1 > 0,
+         DAYSABST2_TOTAL=DAYSABST2 + DAYSABST2_POST,
+         Cannabis_user = DAYSABST2_TOTAL > 0,
+         Cannabis_concurrent = DAYSABST2_POST > 0,
+         Cannabis_prior = DAYSABST2 > 0,
+         DAYSABST3_TOTAL=DAYSABST3 + DAYSABST3_POST,
+         Stimulant_user = DAYSABST3_TOTAL > 0,
+         Stimulant_concurrent = DAYSABST3_POST > 0,
+         Stimulant_prior = DAYSABST3 > 0,
+         DAYSABST4_TOTAL=DAYSABST4 + DAYSABST4_POST,
+         Heroine_user = DAYSABST4_TOTAL > 0,
+         Heroine_concurrent = DAYSABST4_POST > 0,
+         Heroine_prior = DAYSABST4 > 0,
+         DAYSABST5_TOTAL=DAYSABST5 + DAYSABST5_POST,
+         Opiate_user = DAYSABST5_TOTAL > 0,
+         Opiate_concurrent = DAYSABST5_POST > 0,
+         Opiate_prior = DAYSABST5 > 0,
+         DAYSABST6_TOTAL=DAYSABST6 + DAYSABST6_POST,
+         Tobacco_user = DAYSABST6_TOTAL > 0,
+         Tobacco_concurrent = DAYSABST6_POST > 0,
+         Tobacco_prior = DAYSABST6 > 0,
+         DAYSABST7_TOTAL=DAYSABST7 + DAYSABST7_POST,
+         Steroids_user = DAYSABST7_TOTAL > 0,
+         Steroids_concurrent = DAYSABST7_POST > 0,
+         Steroids_prior = DAYSABST7 > 0,
+         DAYSABST8_TOTAL=DAYSABST8 + DAYSABST8_POST,
+         Other_user = DAYSABST8_TOTAL > 0,
+         Other_concurrent = DAYSABST8_POST > 0,
+         Other_prior = DAYSABST8 > 0) %>%
+  rename(PCL=value,day=name)
+substance_vec<-names(substanceDataLong)[grepl("_user",names(substanceDataLong))]
+total_use_model_list<-vector(mode="list",length(names(substanceDataLong)[grepl("_user",names(substanceDataLong))]))
+interaction_use_model_list<-vector(mode="list",length(names(substanceDataLong)[grepl("_user",names(substanceDataLong))]))
+concurrent_use_model_list<-vector(mode="list",length(names(substanceDataLong)[grepl("_user",names(substanceDataLong))]))
+prior_use_model_list<-vector(mode="list",length(names(substanceDataLong)[grepl("_user",names(substanceDataLong))]))
+for (s in 1:length(substance_vec)){
+  substance<-substance_vec[s]
+  tmp<-substanceDataLong %>% select(one_of(c("day","PCL",substance)))
+  # tmp %>% filter(complete.cases(tmp)) %>%
+  # group_by_at(c("day",substance)) %>%
+  # summarise(PCL_outcomes=mean(PCL),
+  #           PCL_se=std.error(PCL)) %>%
+  # ggplot(aes_string(x="day",y="PCL_outcomes",colour=substance)) +
+  #   geom_line(aes_string(group=substance,colour=substance)) +
+  #   geom_errorbar(aes(ymin=PCL_outcomes-PCL_se,ymax=PCL_outcomes+PCL_se)) +
+  #   geom_point(aes_string(colour=substance)) +
+  #   theme_bw() +
+  #   theme(axis.text.x = element_text(angle = 45,, hjust=1)) +
+  #   ylab("PCL-5 score") +
+  #   xlab("Day administered") +
+  #   scale_colour_viridis(discrete=T) +
+  #   labs(colour = gsub("_user","",substance) %&% " Use") +
+  #   ggtitle("Impact of " %&% gsub("_user","",substance) %&% " Use") +
+  #   ggsave(dir %&% substance %&% "_outcomes.png",dpi=300)
+  
+  total_use_model_list[[s]]<-lmer("PCL ~ day*DAYSABST" %&% s %&% "_TOTAL + AGE_AT_COHORT_START + gender + COHORT_TYPE + (1|PAT_ID)",substanceDataLong)
+  interaction_use_model_list[[s]]<-lmer("PCL ~ day*DAYSABST" %&% s %&% "*DAYSABST" %&% s %&% "_POST + AGE_AT_COHORT_START + gender + COHORT_TYPE + (1|PAT_ID)",substanceDataLong)
+  prior_use_model_list[[s]]<-lmer("PCL ~ day*DAYSABST" %&% s %&% " + AGE_AT_COHORT_START + gender + COHORT_TYPE + (1|PAT_ID)",substanceDataLong)
+  concurrent_use_model_list[[s]]<-lmer("PCL ~ day*DAYSABST" %&% s %&% "_POST + AGE_AT_COHORT_START + gender + COHORT_TYPE + (1|PAT_ID)",substanceDataLong)
+  
+}
+
+```
+
+```{r}
+lapply(total_use_model_list,anova)
+lapply(interaction_use_model_list,anova)
+lapply(interaction_use_model_list,summary)
+lapply(prior_use_model_list,anova)
+lapply(concurrent_use_model_list,anova)
+```

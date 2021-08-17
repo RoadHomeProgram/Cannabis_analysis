@@ -1,0 +1,150 @@
+---
+title: "cannabis presenation figures"
+author: "Ryan Schubert"
+date: "8/3/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(readxl)
+library(dplyr)
+library(naniar)
+library(tidyr)
+library(ggplot2)
+library(viridis)
+library(plotrix)
+library(lme4)
+library(lmerTest)
+library(viridis)
+"%&%" = function(a,b) paste0(a,b)
+
+```
+
+
+```{r cars}
+dir<-"C:\\Users\\rshoo\\OneDrive\\Desktop\\rush\\cannabis use\\"
+completeData<-read_xlsx(dir %&% 'IOP_DATA_SET_6-12-2020 with Manual Corrections.xlsx',na = "-")
+vars<-c("PAT_ID","COHORT","COHORT_TYPE","AGE_AT_COHORT_START","gender","DAYSABST" %&% 1:8,"DAYSABST" %&% 1:8 %&% "_POST","PCL_SCORE","PCL_DAY" %&% 2:14)
+substanceData<-completeData %>% select(one_of(vars)) %>% filter(!(COHORT %in% 1:3))
+
+table(substanceData$gender)/nrow(substanceData)
+mean(substanceData$AGE_AT_COHORT_START)
+sd(substanceData$AGE_AT_COHORT_START)
+```
+
+```{r}
+substanceData<-substanceData %>% 
+  mutate(delta_PCL=PCL_SCORE-PCL_DAY14,
+         Cannabis_use=case_when(
+           DAYSABST2 !=0 & DAYSABST2_POST != 0 ~ "continuous",
+           DAYSABST2 ==0 & DAYSABST2_POST != 0 ~ "concurrent",
+           DAYSABST2 !=0 & DAYSABST2_POST == 0 ~ "prior",
+           DAYSABST2 ==0 & DAYSABST2_POST == 0 ~ "abstinent",
+         ),
+         binary_other_substance_use=if_else(
+             DAYSABST1 == 1 | DAYSABST1_POST == 1 |
+             DAYSABST3 == 1 | DAYSABST3_POST == 1 |
+             DAYSABST4 == 1 | DAYSABST4_POST == 1 |
+             DAYSABST5 == 1 | DAYSABST5_POST == 1 |
+             DAYSABST6 == 1 | DAYSABST6_POST == 1 |
+             DAYSABST7 == 1 | DAYSABST7_POST == 1 |
+             DAYSABST8 == 1 | DAYSABST8_POST == 1 , 1,0),
+         binary_use=if_else(Cannabis_use=="abstinent","Nonuse","Use")) %>% filter(!is.na(Cannabis_use))
+table(substanceData$Cannabis_use)
+table(substanceData$Cannabis_use)/nrow(substanceData)
+table(substanceData$binary_use)
+table(substanceData$binary_use)/nrow(substanceData)
+table(substanceData$binary_other_substance_use)
+table(substanceData$binary_other_substance_use)/nrow(substanceData)
+table(substanceData$binary_other_substance_use,substanceData$binary_use)
+
+g0<-data.frame(n=c(378,37,70,19),use=c("Abstinent","continuous use","prior only","concurrent only")) %>%
+  ggplot() +
+  geom_col(aes(x=n,y="",fill=use)) +
+  scale_fill_viridis(discrete=T) +
+  theme_bw() +
+  theme(axis.title.y = element_blank()) +
+  xlab("Number of Patients") +
+  labs(fill="Use\nGroup")
+ggsave(dir %&% "barplot_biary_use_proportions.png",width=7,height=2.5,dpi=300,plot=g0)
+```
+# get the linear association with delta pcl
+
+```{r}
+
+change_association_model<-lm(delta_PCL ~ binary_use  + AGE_AT_COHORT_START + gender + COHORT_TYPE + binary_other_substance_use,data=substanceData)
+anova(change_association_model)
+summary(change_association_model)
+tapply(substanceData$delta_PCL,substanceData$binary_use,mean,na.rm=T)
+tapply(substanceData$delta_PCL,substanceData$binary_use,sd,na.rm=T)
+
+g1<-ggplot(substanceData) +
+  geom_violin(aes(x=binary_use,y=delta_PCL,fill=binary_use)) +
+  geom_boxplot(width=0.5,aes(x=binary_use,y=delta_PCL)) +
+  theme_bw()  +
+  scale_fill_viridis(discrete=T) +
+  ylab("Total Change in PCL") +
+  xlab("Cannabis Use Group") +
+  labs(fill="Use\nGroups")
+ggsave(dir %&% "Binary_use_deltat_pcl_violin.png",width=7,height=4.9,plot=g1,dpi=300)
+g2<-ggplot(substanceData) +
+  geom_violin(aes(x=Cannabis_use,y=delta_PCL,fill=Cannabis_use)) +
+  geom_boxplot(width=0.3,aes(x=Cannabis_use,y=delta_PCL)) +
+  theme_bw()  +
+  scale_fill_viridis(discrete=T) +
+  ylab("Total Change in PCL") +
+  xlab("Cannabis Use Group") +
+  labs(fill="Use\nGroups")
+ggsave(dir %&% "Cannabis_use_deltat_pcl_violin.png",width=7,height=4.9,plot=g2,dpi=300)
+
+users_only<-substanceData %>% filter(Cannabis_use %in% c("prior","concurrent","continuous"))
+users_only_model<-lm(delta_PCL ~ Cannabis_use  + AGE_AT_COHORT_START + gender + COHORT_TYPE + binary_other_substance_use,data=users_only)
+anova(users_only_model)
+summary(users_only_model)
+
+g3<-ggplot(users_only) +
+  geom_violin(aes(x=Cannabis_use,y=delta_PCL,fill=Cannabis_use)) +
+  geom_boxplot(width=0.3,aes(x=Cannabis_use,y=delta_PCL)) +
+  theme_bw()  +
+  scale_fill_viridis(discrete=T) +
+  ylab("Total Change in PCL") +
+  xlab("Cannabis Use Group") +
+  labs(fill="Use\nGroups")
+ggsave(dir %&% "users_only_deltat_pcl_violin.png",width=7,height=4.9,plot=g3,dpi=300)
+```
+
+no linear association between encoded grouping and the 
+
+
+# get the lmm interaction between group and time
+
+
+```{r}
+
+substanceDataLong<-substanceData %>% pivot_longer(starts_with("PCL")) %>%
+  mutate(name=factor(name, ordered = TRUE, levels = unique(name))) %>%
+  rename(PCL=value,day=name)
+
+encoded_group_model<-lmer(PCL ~ day*binary_use + AGE_AT_COHORT_START + gender + COHORT_TYPE + binary_other_substance_use + (1|PAT_ID),substanceDataLong)
+anova(encoded_group_model)
+summary(encoded_group_model)
+# coef(encoded_group_model)
+
+g4<-substanceDataLong %>% mutate(binary_use=as.factor(binary_use)) %>% filter(complete.cases(substanceDataLong)) %>%
+  group_by_at(c("day","binary_use")) %>%
+  summarise(PCL_outcomes=mean(PCL),
+            PCL_se=std.error(PCL)) %>%
+  ggplot(aes_string(x="day",y="PCL_outcomes",colour="binary_use")) +
+    geom_line(aes_string(group="binary_use",colour="binary_use")) +
+    geom_errorbar(aes(ymin=PCL_outcomes-PCL_se,ymax=PCL_outcomes+PCL_se)) +
+    geom_point(aes_string(colour="binary_use")) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 45,, hjust=1)) +
+    ylab("PCL-5 score") +
+    xlab("Day administered") +
+    scale_colour_viridis(discrete=T) +
+    labs(colour = gsub("_user","","Cannabis") %&% " Use") +
+    ggtitle("Impact of " %&% gsub("_user","","Cannabis") %&% " Use") #+
+    ggsave(dir %&% "Cannabis_binary_encoded_group_outcomes.png",width=7,height=4.9,plot=g4,dpi=300)
+```
